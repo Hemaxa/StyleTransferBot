@@ -11,7 +11,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Загрузчик и преобразователь изображений
 # Изображения должны быть одного размера при обработке
-imsize = 512 if torch.cuda.is_available() else 128  # Уменьшаем размер на CPU для скорости
+imsize = 1024 if torch.cuda.is_available() else 512  # Уменьшаем размер на CPU для скорости
 
 loader = transforms.Compose([
     transforms.Resize((imsize, imsize)),  # Изменяем размер изображения
@@ -58,6 +58,11 @@ class StyleLoss(nn.Module):
         self.loss = nn.functional.mse_loss(G, self.target)
         return input
 
+def total_variation_loss(img):
+    bs_img, c_img, h_img, w_img = img.size()
+    tv_h = torch.pow(img[:,:,1:,:]-img[:,:,:-1,:], 2).sum()
+    tv_w = torch.pow(img[:,:,:,1:]-img[:,:,:,:-1], 2).sum()
+    return (tv_h+tv_w)/(bs_img*c_img*h_img*w_img)
 
 # Загрузка предобученной модели VGG19
 cnn = models.vgg19(pretrained=True).features.to(device).eval()
@@ -79,7 +84,7 @@ class Normalization(nn.Module):
 
 # Слои, на которых будем считать потери
 content_layers_default = ['conv_4']
-style_layers_default = ['conv_1', 'conv_2', 'conv_3', 'conv_4', 'conv_5']
+style_layers_default = ['conv_1', 'conv_3', 'conv_5', 'conv_7', 'conv_9']
 
 
 def get_style_model_and_losses(cnn, normalization_mean, normalization_std,
@@ -142,7 +147,7 @@ def get_input_optimizer(input_img):
 
 def run_style_transfer(cnn, normalization_mean, normalization_std,
                        content_img_path, style_img_path, output_img_path,
-                       num_steps=300, style_weight=1000000, content_weight=1):
+                       num_steps=800, style_weight=50000, content_weight=1):
     """Главная функция, запускающая перенос стиля."""
     print('Building the style transfer model..')
     content_img = image_loader(content_img_path)
@@ -177,10 +182,13 @@ def run_style_transfer(cnn, normalization_mean, normalization_std,
             for cl in content_losses:
                 content_score += cl.loss
 
+            tv_loss_weight = 1e-3 # Коэффициент нужно подобрать, начните с этого
+            tv_score = total_variation_loss(input_img) * tv_loss_weight
+
             style_score *= style_weight
             content_score *= content_weight
 
-            loss = style_score + content_score
+            loss = style_score + content_score + tv_score
             loss.backward()
 
             run[0] += 1
@@ -190,7 +198,7 @@ def run_style_transfer(cnn, normalization_mean, normalization_std,
                     style_score.item(), content_score.item()))
                 print()
 
-            return style_score + content_score
+            return loss
 
         optimizer.step(closure)
 

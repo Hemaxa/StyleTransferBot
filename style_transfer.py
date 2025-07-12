@@ -3,8 +3,6 @@ import torch.nn as nn
 import torch.optim as optim
 from PIL import Image
 import torchvision.transforms as transforms
-import torchvision.models as models
-import copy
 
 # Определяем устройство: GPU, если доступен, иначе CPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -64,14 +62,6 @@ def total_variation_loss(img):
     tv_w = torch.pow(img[:,:,:,1:]-img[:,:,:,:-1], 2).sum()
     return (tv_h+tv_w)/(bs_img*c_img*h_img*w_img)
 
-# Загрузка предобученной модели VGG19
-cnn = models.vgg19(pretrained=True).features.to(device).eval()
-
-# Нормализация для VGG
-cnn_normalization_mean = torch.tensor([0.485, 0.456, 0.406]).to(device)
-cnn_normalization_std = torch.tensor([0.229, 0.224, 0.225]).to(device)
-
-
 class Normalization(nn.Module):
     def __init__(self, mean, std):
         super(Normalization, self).__init__()
@@ -82,15 +72,9 @@ class Normalization(nn.Module):
         return (img - self.mean) / self.std
 
 
-# Слои, на которых будем считать потери
-content_layers_default = ['conv_4']
-style_layers_default = ['conv_1', 'conv_3', 'conv_5', 'conv_7', 'conv_9']
-
-
 def get_style_model_and_losses(cnn, normalization_mean, normalization_std,
                                style_img, content_img,
-                               content_layers=content_layers_default,
-                               style_layers=style_layers_default):
+                               content_layers, style_layers):
     normalization = Normalization(normalization_mean, normalization_std).to(device)
 
     content_losses = []
@@ -145,18 +129,27 @@ def get_input_optimizer(input_img):
     return optimizer
 
 
-def run_style_transfer(cnn, normalization_mean, normalization_std,
+def run_style_transfer(model_config,
                        content_img_path, style_img_path, output_img_path,
                        num_steps=800, style_weight=50000, content_weight=1):
     """Главная функция, запускающая перенос стиля."""
+    print(f'Using model: {model_config["name"]}')
     print('Building the style transfer model..')
+    
     content_img = image_loader(content_img_path)
     style_img = image_loader(style_img_path)
     # В качестве начального изображения можно взять контент-изображение или случайный шум
     input_img = content_img.clone()
 
     model, style_losses, content_losses = get_style_model_and_losses(
-        cnn, normalization_mean, normalization_std, style_img, content_img)
+        cnn=model_config["model"],
+        normalization_mean=model_config["normalization_mean"],
+        normalization_std=model_config["normalization_std"],
+        style_img=style_img,
+        content_img=content_img,
+        content_layers=model_config["content_layers"],
+        style_layers=model_config["style_layers"]
+    )
 
     # Устанавливаем require_grad=True для входного изображения, чтобы вычислять по нему градиенты
     input_img.requires_grad_(True)

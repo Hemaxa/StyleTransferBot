@@ -1,11 +1,12 @@
 import logging
 import os
 import time
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
-# Ваш файл со всей логикой переноса стиля. Убедитесь, что он лежит рядом.
-from style_transfer import run_style_transfer, cnn, cnn_normalization_mean, cnn_normalization_std
+# Импортируем новую функцию для получения конфига и сам Style Transfer
+from style_transfer import run_style_transfer
+from models import get_model_config, MODELS
 
 # Включаем логирование для отладки
 logging.basicConfig(
@@ -24,7 +25,7 @@ os.makedirs(CONTENT_DIR, exist_ok=True)
 os.makedirs(STYLE_DIR, exist_ok=True)
 os.makedirs(RESULT_DIR, exist_ok=True)
 
-# Словарь для хранения сессий пользователей: user_id -> {'content': path, 'style': path}
+# Словарь для хранения сессий пользователей: user_id -> {'content': path, 'style': path, 'model': str}
 user_sessions = {}
 
 # --- ВАЖНО: Вставьте сюда свой токен, полученный от @BotFather ---
@@ -33,7 +34,7 @@ TOKEN = '7205161046:AAHTTtvI_5OIZIPLAdSNm5slNLzPaHKSS9E' #
 def get_session(user_id):
     """Получает или создает новую сессию для пользователя."""
     if user_id not in user_sessions:
-        user_sessions[user_id] = {'content': None, 'style': None}
+        user_sessions[user_id] = {'content': None, 'style': None, 'model': None}
     return user_sessions[user_id]
 
 def clear_session(user_id):
@@ -43,13 +44,13 @@ def clear_session(user_id):
         os.remove(session['content'])
     if session['style'] and os.path.exists(session['style']):
         os.remove(session['style'])
-    user_sessions[user_id] = {'content': None, 'style': None}
+    user_sessions[user_id] = {'content': None, 'style': None, 'model': None}
     logger.info(f"Сессия для пользователя {user_id} очищена.")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start. Приветствует пользователя."""
     user_id = update.effective_user.id
-    clear_session(user_id)  # Очищаем старую сессию на случай, если она осталась
+    clear_session(user_id)
     await update.message.reply_text(
         "👋 *Привет! Я — Style Transfer Бот* 🎨\n\n"
         "Я могу превратить ваше фото в произведение искусства, используя стиль другой картины.\n\n"
@@ -64,8 +65,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "ℹ️ *Как мной пользоваться:*\n\n"
         "1.  Отправьте мне изображение, которое будет основой (*фотография, пейзаж и т.д.*).\n"
-        "2.  Сразу после этого отправьте второе изображение, которое задаст стиль (*картина, узор, текстура*).\n\n"
-        "🤖 Бот автоматически начнет обработку после получения второго фото.\n\n"
+        "2.  Сразу после этого отправьте второе изображение, которое задаст стиль (*картина, узор, текстура*).\n"
+        "3.  После этого вы сможете выбрать модель для переноса стиля.\n\n"
+        "🤖 Бот автоматически начнет обработку после выбора модели.\n\n"
         "Если вы передумали или что-то пошло не так, используйте команду /clear, чтобы начать заново.",
         parse_mode='Markdown'
     )
@@ -85,7 +87,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     photo_file = await update.message.photo[-1].get_file()
 
-    # Если первое изображение (контент) еще не загружено
     if session['content'] is None:
         content_path = os.path.join(CONTENT_DIR, f'{user_id}_content.jpg')
         await photo_file.download_to_drive(content_path)
@@ -94,18 +95,55 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "✅ Отлично! Фото для контента получено.\n\n"
             "Теперь отправьте мне второе изображение, чтобы я перенял его *стиль* 🎨."
         )
-    # Если второе изображение (стиль) еще не загружено
     elif session['style'] is None:
         style_path = os.path.join(STYLE_DIR, f'{user_id}_style.jpg')
         await photo_file.download_to_drive(style_path)
         session['style'] = style_path
         
-        message = await update.message.reply_text(
-            "✨ Прекрасно! Оба изображения на месте.\n\n"
-            "⏳ Начинаю творить магию... Это может занять несколько минут. Пожалуйста, подождите."
-        )
-        # Запускаем долгий процесс переноса стиля
-        await process_style_transfer(update, context, message)
+        # Предлагаем выбрать модель
+        await ask_for_model(update, context)
+
+async def ask_for_model(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Отправляет сообщение с кнопками для выбора модели."""
+    keyboard = []
+    for model_name, config in MODELS.items():
+        button = InlineKeyboardButton(config["name"], callback_data=f"model_{model_name}")
+        keyboard.append([button])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        '*Отлично! Оба изображения на месте.*\n\nВыберите модель для переноса стиля:',
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обрабатывает нажатия на инлайн-кнопки."""
+    query = update.callback_query
+    await query.answer()  # Отвечаем на колбэк, чтобы убрать "часики" с кнопки
+
+    user_id = query.from_user.id
+    session = get_session(user_id)
+
+    # Проверяем, что сессия все еще активна
+    if not session['content'] or not session['style']:
+        await query.edit_message_text("Сессия истекла. Пожалуйста, начните заново, отправив /start.")
+        return
+
+    model_choice = query.data.split('_')[1]
+    session['model'] = model_choice
+    
+    model_config = get_model_config(model_choice)
+    
+    await query.edit_message_text(
+        f"✨ Выбрана модель: *{model_config['name']}*.\n\n"
+        f"_{model_config['description']}_\n\n"
+        "⏳ Начинаю творить магию... Это может занять несколько минут. Пожалуйста, подождите.",
+        parse_mode='Markdown'
+    )
+    
+    # Запускаем долгий процесс переноса стиля
+    await process_style_transfer(update, context, query.message)
 
 def format_duration(seconds):
     """Форматирует секунды в минуты и секунды."""
@@ -118,6 +156,7 @@ def format_duration(seconds):
 
 async def process_style_transfer(update: Update, context: ContextTypes.DEFAULT_TYPE, status_message):
     """Запускает перенос стиля, замеряет время и отправляет результат."""
+    # В `update` у нас может быть или `Message` или `CallbackQuery`, берем user_id оттуда
     user_id = update.effective_user.id
     session = get_session(user_id)
     result_path = os.path.join(RESULT_DIR, f'{user_id}_result.jpg')
@@ -125,13 +164,10 @@ async def process_style_transfer(update: Update, context: ContextTypes.DEFAULT_T
     start_time = time.time()
     
     try:
-        # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
-        # Мы напрямую вызываем вашу синхронную функцию, как и должно быть.
-        # Это самый простой и надежный способ в данном случае.
+        model_config = get_model_config(session['model'])
+        
         run_style_transfer(
-            cnn=cnn,
-            normalization_mean=cnn_normalization_mean,
-            normalization_std=cnn_normalization_std,
+            model_config=model_config,
             content_img_path=session['content'],
             style_img_path=session['style'],
             output_img_path=result_path,
@@ -144,10 +180,10 @@ async def process_style_transfer(update: Update, context: ContextTypes.DEFAULT_T
         duration = end_time - start_time
         duration_str = format_duration(duration)
 
-        caption = f"🎉 Готово! Ваш шедевр создан.\n\n⏱️ Время обработки: {duration_str}"
+        caption = f"🎉 Готово! Ваш шедевр создан с помощью модели *{model_config['name']}*.\n\n⏱️ Время обработки: {duration_str}"
 
         # Отправляем фото и удаляем сообщение о статусе
-        await context.bot.send_photo(chat_id=user_id, photo=open(result_path, 'rb'), caption=caption)
+        await context.bot.send_photo(chat_id=user_id, photo=open(result_path, 'rb'), caption=caption, parse_mode='Markdown')
         await status_message.delete()
 
     except Exception as e:
@@ -174,6 +210,9 @@ def main():
 
     # Добавляем обработчик для всех входящих фотографий
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    
+    # Добавляем обработчик для нажатий на кнопки
+    app.add_handler(CallbackQueryHandler(button_callback, pattern='^model_'))
 
     # Запускаем опрос сервера Telegram
     app.run_polling()

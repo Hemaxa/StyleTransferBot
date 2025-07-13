@@ -59,20 +59,15 @@ python bot.py
 
 Эта модель требует только одно фото и быстро применяет к нему стиль Клода Моне.
 
-<img width="458" height="310" alt="img1" src="https://github.com/user-attachments/assets/112455e2-8968-4978-9b77-5f30c367f15e" />
-<img width="310" height="310" alt="reg" src="https://github.com/user-attachments/assets/8fcdf13e-adcc-447c-a255-f6b5338b1849" />
+<img width="830" height="350" alt="1" src="https://github.com/user-attachments/assets/a53503d2-7bc8-49e0-8321-82b9a77a1766" />
+<img width="830" height="350" alt="2" src="https://github.com/user-attachments/assets/2aebad8a-6f1f-4d9e-a3db-45aba3cc06c7" />
 
 ### **Модель: VGG-19**
 
 Эта модель требует два изображения: одно для контента, другое для стиля.
 
-<img width="310" height="310" alt="imv1" src="https://github.com/user-attachments/assets/3f293891-af6c-4aba-ba80-fde4f5e31a30" />
-<img width="310" height="310" alt="imv2" src="https://github.com/user-attachments/assets/4d9a8263-2c45-450f-a7cc-0aca3c3dbf73" />
-<img width="310" height="310" alt="rev" src="https://github.com/user-attachments/assets/dc358ecf-3f69-4b96-9acf-3c0eec58e1b6" />
-
-<img width="355" height="250" alt="imv3" src="https://github.com/user-attachments/assets/98fd4727-1085-4449-9a07-3445145ff359" />
-<img width="316" height="250" alt="imv4" src="https://github.com/user-attachments/assets/25a13287-e8de-4efe-9b1a-d78d83732478" />
-<img width="250" height="250" alt="rev2" src="https://github.com/user-attachments/assets/1efd9acd-e304-4175-b826-76f407a017dc" />
+<img width="830" height="350" alt="3" src="https://github.com/user-attachments/assets/84073256-1e92-41bb-bd9c-39013750bcaf" />
+<img width="830" height="350" alt="4" src="https://github.com/user-attachments/assets/8f3e83a8-1e08-4fef-bfec-10476e7522dc" />
 
 ## **📚 Основные команды для работы с репозиторием**
 

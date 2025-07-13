@@ -21,7 +21,7 @@ os.makedirs(CONTENT_DIR, exist_ok=True)
 os.makedirs(STYLE_DIR, exist_ok=True)
 os.makedirs(RESULT_DIR, exist_ok=True)
 
-TOKEN = '-' # ВАШ ТОКЕН
+TOKEN = '---' # ВАШ ТОКЕН
 user_sessions = {}
 
 # --- Управление сессиями ---
